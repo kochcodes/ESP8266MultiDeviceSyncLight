@@ -1,14 +1,15 @@
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <espnow.h>
+#include <EEPROM.h>
 #include <LED.h>
 #include <BlinkRoutines.h>
 
 const uint8_t ipLength = 6;
 uint8_t mac[ipLength];
 uint8_t network_members[][ipLength] = {
-    {0xEC, 0xFA, 0xBC, 0xC0, 0x9C, 0x35},
-    {0x50, 0x02, 0x91, 0x68, 0xFA, 0x32}};
+    {0x98, 0xF4, 0xAB, 0xDA, 0xB3, 0x70},  // 98:F4:AB:DA:B3:70
+    {0xEC, 0xFA, 0xBC, 0xC0, 0x9C, 0x35}}; // EC:FA:BC:C0:9C:35
 
 esp_now_role role = ESP_NOW_ROLE_SLAVE;
 long last_msg_from_master = 0;
@@ -22,15 +23,38 @@ typedef struct struct_message
 
 struct_message data;
 
-uint8_t blinkRoutineIndex = 2;
-BlinkRoutine *blinkRoutines[3];
+const uint8_t blinkRoutinesNumber = 4;
+uint8_t blinkRoutineIndex = 1; // will be owerwritten by value stored in eeprom
+uint8_t new_mode_to_save = blinkRoutineIndex;
+BlinkRoutine *
+    blinkRoutines[blinkRoutinesNumber];
 
 unsigned long lastTime = 0;
 unsigned long timerDelay = 2000;
 
+void init_eeprom()
+{
+  EEPROM.begin(512);
+}
+
+void save_mode_to_eeprom(uint8_t mode)
+{
+  int mode_addr = 0;
+  EEPROM.put(mode_addr, mode);
+  EEPROM.commit();
+}
+
+int get_mode_from_eeprom()
+{
+  int mode_addr = 0;
+  uint8_t mode = 0;
+  EEPROM.get(mode_addr, mode);
+  return mode;
+}
+
 void setupPeers(esp_now_role role)
 {
-  for (int i = 0; i < sizeof(network_members) / ipLength; i++)
+  for (unsigned int i = 0; i < sizeof(network_members) / ipLength; i++)
   {
     esp_now_del_peer(network_members[i]);
     if (memcmp(network_members[i], mac, ipLength) != 0)
@@ -42,11 +66,15 @@ void setupPeers(esp_now_role role)
 
 void sendUpdateToPeers()
 {
-  for (int i = 0; i < sizeof(network_members) / ipLength; i++)
+  for (unsigned int i = 0; i < sizeof(network_members) / ipLength; i++)
   {
     data.mode = blinkRoutineIndex;
     if (memcmp(network_members[i], mac, ipLength) != 0)
     {
+#ifdef D_SERIAL
+      D_SERIAL.printf("Sending to member %d\n", i);
+      D_SERIAL.printf("Blink-Mode: %d\n", blinkRoutineIndex);
+#endif
       esp_now_send(network_members[i], (uint8_t *)&data, sizeof(data));
     }
   }
@@ -77,6 +105,7 @@ void OnDataRecv(uint8_t *mac, uint8_t *incomingData, uint8_t len)
   if (blinkRoutineIndex != data.mode)
   {
     blinkRoutineIndex = data.mode;
+    save_mode_to_eeprom(blinkRoutineIndex);
     leds.setRoutine(blinkRoutines[blinkRoutineIndex], last_msg_from_master);
   }
   else
@@ -104,9 +133,20 @@ void setup()
   D_SERIAL.println(WiFi.macAddress());
 #endif
 
+  init_eeprom();
+  blinkRoutineIndex = get_mode_from_eeprom();
+  new_mode_to_save = (blinkRoutineIndex + 1) % blinkRoutinesNumber;
+  save_mode_to_eeprom(new_mode_to_save);
+
+#ifdef D_SERIAL
+  D_SERIAL.print("Blink mode from EEPROM:  ");
+  D_SERIAL.println(blinkRoutineIndex);
+#endif
+
   blinkRoutines[0] = new SingleBlinkRoutine(10, 300);
   blinkRoutines[1] = new DoubleBlinkRoutine();
-  blinkRoutines[2] = new FadeRoutine(500);
+  blinkRoutines[2] = new FadeRoutine(2000);
+  blinkRoutines[3] = new DoubleBlinkSemiRoutine();
   leds.setRoutine(blinkRoutines[blinkRoutineIndex], 0);
   WiFi.macAddress(mac);
   WiFi.mode(WIFI_STA);
@@ -137,6 +177,16 @@ void loop()
     }
   }
   leds.loop(t);
+  if (startup_delay < t && new_mode_to_save != blinkRoutineIndex)
+  {
+#ifdef D_SERIAL
+    D_SERIAL.print("Reset blinkmode to ");
+    D_SERIAL.println(blinkRoutineIndex);
+#endif
+    new_mode_to_save = blinkRoutineIndex;
+    save_mode_to_eeprom(blinkRoutineIndex);
+  }
+
   if (last_msg_from_master + startup_delay < t && role == ESP_NOW_ROLE_SLAVE)
   {
 #ifdef D_SERIAL

@@ -30,7 +30,7 @@ public:
     }
     void synchronize(long t)
     {
-        Serial.printf("Sync: %d\n", t);
+        Serial.printf("Sync: %ld\n", t);
         this->offset = t;
     }
     int setRoutine(BlinkRoutine *r, long sync)

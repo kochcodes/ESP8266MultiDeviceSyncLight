@@ -8,8 +8,13 @@
 const uint8_t ipLength = 6;
 uint8_t mac[ipLength];
 uint8_t network_members[][ipLength] = {
-    {0x98, 0xF4, 0xAB, 0xDA, 0xB3, 0x70},  // 98:F4:AB:DA:B3:70
-    {0xEC, 0xFA, 0xBC, 0xC0, 0x9C, 0x35}}; // EC:FA:BC:C0:9C:35
+    {0x5C, 0xCF, 0x7F, 0xAC, 0xBD, 0xFC}, // 5C:CF:7F:AC:BD:FC connector
+    {0x98, 0xF4, 0xAB, 0xDA, 0xB3, 0x70}, // 98:F4:AB:DA:B3:70 member
+    {0xEC, 0xFA, 0xBC, 0xC0, 0x9C, 0x35}, // EC:FA:BC:C0:9C:35 member
+    {0x98, 0xF4, 0xAB, 0xDA, 0xB8, 0x26}, // 98:F4:AB:DA:B8:26 member
+    {0x30, 0xAE, 0xA4, 0x8D, 0xE7, 0x2C}, // 30:AE:A4:8D:E7:2C esp32 connector
+    {0x30, 0xAE, 0xA4, 0x8D, 0xE7, 0x2D}  // 30:AE:A4:8D:E7:2D esp32 connector
+};
 
 esp_now_role role = ESP_NOW_ROLE_SLAVE;
 long last_msg_from_master = 0;
@@ -94,6 +99,8 @@ void OnDataSent(uint8_t *mac_addr, uint8_t sendStatus)
 void OnDataRecv(uint8_t *mac, uint8_t *incomingData, uint8_t len)
 {
   last_msg_from_master = millis();
+
+  D_SERIAL.print("Bytes received: ");
   memcpy(&data, incomingData, sizeof(data));
 #ifdef D_SERIAL
   D_SERIAL.print("Bytes received: ");
